@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Photo Library
+Name[ru]=Фототека
+Exec=media-manager
+Icon=media-manager
+Categories=Graphics;Photography;
+Terminal=false
