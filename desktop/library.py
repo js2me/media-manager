@@ -109,7 +109,15 @@ class Library:
                                     if isinstance(icon, Gio.LoadableIcon):
                                         scan.icons[item] = icon
                                     scan.files[item] = device.root / path
-                                    scan.items.append(dict(id=item, name=name, folder=str(relative),
+                                    # GVfs exposes MTP storage volumes as the first directory level.
+                                    # Keep card names distinct when archiving from multiple volumes.
+                                    archive_folder = relative
+                                    if device.uri.startswith("mtp://") and relative.parts and relative.parts[0].casefold() in {
+                                        "внутренний накопитель устройства", "internal shared storage",
+                                        "internal storage", "internal device storage"
+                                    }:
+                                        archive_folder = Path(*relative.parts[1:])
+                                    scan.items.append(dict(id=item, name=name, folder=str(relative), archiveFolder=str(archive_folder),
                                         modified=stamp if info.has_attribute("time::modified") else None,
                                         size=info.get_size() if info.has_attribute("standard::size") else None,
                                         kind="photo" if ext in PHOTOS else "video"))

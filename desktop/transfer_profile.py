@@ -56,10 +56,20 @@ def save_profile(directory, settings):
             Path(name).unlink(missing_ok=True)
 
 
-def grouped_path(relative, item, grouping):
+MONTH_NAMES = {
+    "ru": "январь февраль март апрель май июнь июль август сентябрь октябрь ноябрь декабрь".split(),
+    "en": "January February March April May June July August September October November December".split(),
+}
+
+
+def grouped_path(relative, item, grouping, language="en"):
+    relative = Path(item.get("archiveFolder", relative.parent)) / relative.name
     if grouping == "month":
         stamp = item["modified"]
-        prefix = datetime.fromtimestamp(stamp).strftime("%Y/%m") if stamp is not None else "Unknown-date"
+        prefix = "Unknown-date"
+        if stamp is not None:
+            date = datetime.fromtimestamp(stamp)
+            prefix = f"{date.year}/{MONTH_NAMES[language][date.month - 1]}"
         return Path(prefix) / relative
     if grouping == "type":
         return Path("Videos" if item["kind"] == "video" else "Photos") / relative

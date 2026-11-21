@@ -17,6 +17,7 @@ def show_window(window, url):
                 process = subprocess.Popen([
                     chrome, f"--app={url}", f"--user-data-dir={profile}", "--window-size=1160,780",
                     "--no-first-run", "--no-default-browser-check", "--disable-background-mode",
+                    "--disable-features=Translate",
                 ])
             except OSError:
                 process = None

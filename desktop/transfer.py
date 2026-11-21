@@ -122,7 +122,9 @@ class Transfers:
         with self.lock:
             self.state.update(values)
 
-    def start(self, key, path, disk, move, grouping="original", folders=None):
+    def start(self, key, path, disk, move, grouping="original", folders=None, language="en"):
+        if language not in ("en", "ru"):
+            raise ValueError("profileError")
         settings = profile(grouping, folders, move)
         selected = set(folders) if folders is not None else None
         dest = Path(path)
@@ -139,7 +141,7 @@ class Transfers:
             for item in scan.items:
                 if selected is None or item["folder"] in selected:
                     rel = scan.files[item["id"]].relative_to(root)
-                    entries.append((rel, grouped_path(rel, item, grouping), item["size"]))
+                    entries.append((rel, grouped_path(rel, item, grouping, language), item["size"]))
             if not entries:
                 raise ValueError("selectFolders")
         if root.is_relative_to(dest) or dest.is_relative_to(root) or dest.is_relative_to(Path("/run/user") / str(os.getuid()) / "gvfs"):

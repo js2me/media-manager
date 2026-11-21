@@ -41,13 +41,15 @@ export function TransferDialog(props: { model: LibraryModel }) {
     const item = props.model.sampleFile(folders());
     if (!item || !path()) return;
     const source = item.folder === "." ? item.name : item.folder + "/" + item.name;
+    const archiveFolder = item.archiveFolder ?? item.folder;
+    const archivePath = archiveFolder === "." ? item.name : archiveFolder + "/" + item.name;
     let prefix = "";
     if (grouping() === "type") prefix = item.kind === "video" ? "Videos/" : "Photos/";
     if (grouping() === "month") {
       const date = item.modified == null ? null : new Date(item.modified * 1000);
-      prefix = date ? date.getFullYear() + "/" + String(date.getMonth() + 1).padStart(2, "0") + "/" : "Unknown-date/";
+      prefix = date ? date.getFullYear() + "/" + date.toLocaleString(locale.language, { month: "long" }) + "/" : "Unknown-date/";
     }
-    return { source, destination: path().replace(/\/+$/, "") + "/", prefix };
+    return { source, archivePath, destination: path().replace(/\/+$/, "") + "/", prefix };
   });
   function destinationChanged(value: string, delay = 0) {
     const version = ++lookup;
@@ -131,7 +133,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
         .sort((a, b) => b.path.length - a.path.length)[0];
       const response = await fetch("api/transfer", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ device: state.selected, path: target, disk: mount?.disk, move: move(), folders: folders(), grouping: grouping() }),
+        body: JSON.stringify({ device: state.selected, path: target, disk: mount?.disk, move: move(), folders: folders(), grouping: grouping(), language: locale.language }),
       });
       if (!response.ok) throw new Error();
       const result: Job & { rejected?: Message } = await response.json();
@@ -186,7 +188,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
               <dt>{t("sampleSource")}</dt>
               <dd>{file().source}</dd>
               <dt>{t("sampleDestination")}</dt>
-              <dd>{file().destination}<strong>{file().prefix}</strong>{file().source}</dd>
+              <dd>{file().destination}<strong>{file().prefix}</strong>{file().archivePath}</dd>
             </dl>
           }</Show>
         </fieldset>

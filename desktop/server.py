@@ -206,7 +206,8 @@ def create_server(library, connect, choose_folder=None):
                         raise ValueError("destinationError")
                     data = json.loads(self.rfile.read(length))
                     result = transfers.start(data["device"], data["path"], data.get("disk"),
-                                             data.get("move") is True, data.get("grouping", "original"), data.get("folders"))
+                                             data.get("move") is True, data.get("grouping", "original"), data.get("folders"),
+                                             data.get("language", "en"))
                 except (ValueError, TypeError, OSError, KeyError) as error:
                     code = str(error)
                     result = dict(rejected=code if code in {"transferBusy", "scanRequired", "selectFolders", "profileError"} else "destinationError")
