@@ -1,4 +1,4 @@
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { FolderOpen, HardDriveDownload, X } from "lucide-solid";
 import { request } from "../../shared/api/request";
 import { locale, t } from "../../shared/i18n";
@@ -37,6 +37,18 @@ export function TransferDialog(props: { model: LibraryModel }) {
   function clearTimer() { window.clearTimeout(timer); }
   onCleanup(clearTimer);
   const count = () => folders()?.reduce((n, f) => n + props.model.folderCount(f), 0) ?? state.total;
+  const example = createMemo(() => {
+    const item = props.model.sampleFile(folders());
+    if (!item || !path()) return;
+    const source = item.folder === "." ? item.name : item.folder + "/" + item.name;
+    let prefix = "";
+    if (grouping() === "type") prefix = item.kind === "video" ? "Videos/" : "Photos/";
+    if (grouping() === "month") {
+      const date = item.modified == null ? null : new Date(item.modified * 1000);
+      prefix = date ? date.getFullYear() + "/" + String(date.getMonth() + 1).padStart(2, "0") + "/" : "Unknown-date/";
+    }
+    return { source, destination: path().replace(/\/+$/, "") + "/", prefix };
+  });
   function destinationChanged(value: string, delay = 0) {
     const version = ++lookup;
     window.clearTimeout(profileTimer);
@@ -148,6 +160,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
         </div>
         <datalist id="transfer-targets"><For each={choices()}>{d => <option value={d.path}/>}</For></datalist>
         <Show when={restored()}><small>{t("restoredProfile")}</small></Show>
+        <div class="transfer-columns">
         <fieldset class="transfer-scope" disabled={!profileReady() || pending()}>
           <legend>{t("sourceFolders")}</legend>
           <label><input type="checkbox" checked={folders() === null} onChange={e => setFolders(e.currentTarget.checked ? null : [])} /> {t("allFolders")}</label>
@@ -160,13 +173,24 @@ export function TransferDialog(props: { model: LibraryModel }) {
               }</For>
             </div>
           </Show>
-          <label for="transfer-grouping">{t("groupBy")}</label>
+        </fieldset>
+        <fieldset class="transfer-scope transfer-layout" disabled={!profileReady() || pending()}>
+          <legend><label for="transfer-grouping">{t("groupBy")}</label></legend>
           <select id="transfer-grouping" value={grouping()} onChange={e => setGrouping(e.currentTarget.value as Grouping)}>
             <option value="original">{t("originalFolders")}</option>
             <option value="month">{t("monthFolders")}</option>
             <option value="type">{t("typeFolders")}</option>
           </select>
+          <Show when={example()} fallback={<p>{t("selectFolders")}</p>}>{file =>
+            <dl class="transfer-example">
+              <dt>{t("sampleSource")}</dt>
+              <dd>{file().source}</dd>
+              <dt>{t("sampleDestination")}</dt>
+              <dd>{file().destination}<strong>{file().prefix}</strong>{file().source}</dd>
+            </dl>
+          }</Show>
         </fieldset>
+        </div>
         <label class="transfer-option"><input type="checkbox" disabled={!profileReady() || pending()} checked={move()} onChange={e => setMove(e.currentTarget.checked)} />{t("removeOriginals")}</label>
         <button class="primary" disabled={pending() || state.busy || !count() || !profileReady()} onClick={start}>{t(move() ? "moveFiles" : "copyFiles")}</button>
         <Show when={state.busy}><p>{t("scanRequired")}</p></Show>

@@ -20,6 +20,7 @@ import {
   Images,
   Play,
   RefreshCw,
+  LoaderCircle,
   Settings,
   Smartphone,
   HardDrive,
@@ -223,6 +224,15 @@ export function LibraryPage() {
         </button>
       </aside>
       <main>
+        <Show when={s.busy}>
+          <div class="scan-status" role="status" title={s.scanFolder || undefined}>
+            <LoaderCircle class="spin" size={15} aria-hidden="true" />
+            <span>{t("reading")}</span>
+            <Show when={s.scanFolder}>
+              <span class="scan-folder">{folderName(s.scanFolder, t("root"))}</span>
+            </Show>
+          </div>
+        </Show>
         <header>
           <div class="location">
             <Images size={16} />
@@ -251,103 +261,89 @@ export function LibraryPage() {
               {s.error && t(s.error)}
             </p>
           </Show>
-          <Show when={s.busy && s.total > 0}>
-            <p class="count" role="status">
-              {t("reading")} {s.scanFolder}
-            </p>
-          </Show>
           <Show when={s.skipped}>
             <p class="warning">
               {t("skipped")} · {s.skipped}
             </p>
           </Show>
-          <Show
-            when={s.busy && s.total === 0}
-            fallback={
+          <Show when={!s.busy || s.total > 0}>
+            <Show
+              when={device()}
+              fallback={
+                <div class="connection-scene">
+                  <div class="scene-credit" lang="en">
+                    Big Dipper · Hajime Mizuno
+                  </div>
+                  <div class="connection-card">
+                    <div class="connection-icon">
+                      <Smartphone size={25} aria-hidden="true" />
+                    </div>
+                    <h2>{t("connectTitle")}</h2>
+                    <p>{t("connectText")}</p>
+                    <button class="primary" onClick={openHelp}>
+                      <Usb size={16} />
+                      {t("how")}
+                    </button>
+                  </div>
+                </div>
+              }
+            >
               <Show
-                when={device()}
+                when={device()?.mounted}
                 fallback={
-                  <div class="connection-scene">
-                    <div class="scene-credit" lang="en">
-                      Big Dipper · Hajime Mizuno
-                    </div>
-                    <div class="connection-card">
-                      <div class="connection-icon">
-                        <Smartphone size={25} aria-hidden="true" />
-                      </div>
-                      <h2>{t("connectTitle")}</h2>
-                      <p>{t("connectText")}</p>
-                      <button class="primary" onClick={openHelp}>
-                        <Usb size={16} />
-                        {t("how")}
-                      </button>
-                    </div>
+                  <div class="empty">
+                    <Smartphone />
+                    <h2>{t("access")}</h2>
+                    <p>{t("unlock")}</p>
+                    <button class="primary" onClick={() => void vm.connect()}>
+                      {t("connect")}
+                    </button>
                   </div>
                 }
               >
                 <Show
-                  when={device()?.mounted}
+                  when={vm.selection.length}
                   fallback={
                     <div class="empty">
-                      <Smartphone />
-                      <h2>{t("access")}</h2>
-                      <p>{t("unlock")}</p>
-                      <button class="primary" onClick={() => void vm.connect()}>
-                        {t("connect")}
-                      </button>
+                      <Camera size={38} />
+                      <h2>
+                        {s.error
+                          ? t("unavailable")
+                          : s.dateFrom || s.dateTo || s.query || s.extension || s.filter !== "all"
+                            ? t("noMatches")
+                            : t("empty")}
+                      </h2>
                     </div>
                   }
                 >
-                  <Show
-                    when={vm.selection.length}
-                    fallback={
-                      <div class="empty">
-                        <Camera size={38} />
-                        <h2>
-                          {s.error
-                            ? t("unavailable")
-                            : s.dateFrom || s.dateTo || s.query || s.extension || s.filter !== "all"
-                              ? t("noMatches")
-                              : t("empty")}
-                        </h2>
-                      </div>
-                    }
+                  <p class="count">
+                    {t("files")} · {vm.selection.length}
+                  </p>
+                  <MediaGrid
+                    items={vm.selection}
+                    count={vm.selection.length}
+                    selectionKey={JSON.stringify([
+                      s.selected,
+                      s.folder,
+                      s.filter,
+                      s.query,
+                      s.extension,
+                      s.dateFrom,
+                      s.dateTo,
+                      s.order,
+                    ])}
                   >
-                    <p class="count">
-                      {t("files")} · {vm.selection.length}
-                    </p>
-                    <MediaGrid
-                      items={vm.selection}
-                      count={vm.selection.length}
-                      selectionKey={JSON.stringify([
-                        s.selected,
-                        s.folder,
-                        s.filter,
-                        s.query,
-                        s.extension,
-                        s.dateFrom,
-                        s.dateTo,
-                        s.order,
-                      ])}
-                    >
-                      {(item) => (
-                        <Tile
-                          item={item}
-                          device={s.selected}
-                          open={() => open(item)}
-                        />
-                      )}
-                    </MediaGrid>
-                  </Show>
+                    {(item) => (
+                      <Tile
+                        item={item}
+                        device={s.selected}
+                        open={() => open(item)}
+                      />
+                    )}
+                  </MediaGrid>
                 </Show>
               </Show>
-            }
-          >
-            <div class="empty" role="status">
-              <RefreshCw class="spin" />
-              <h2>{t("reading")}</h2>
-              <p>{s.scanFolder === "." ? t("root") : s.scanFolder}</p>
-            </div>
+            </Show>
           </Show>
         </section>
       </main>

@@ -13,7 +13,8 @@ from urllib.parse import parse_qs, unquote, urlsplit
 from transfer_profile import LIMIT, read_profile
 from transfer import Transfers, destinations
 from thumbnail_cache import ThumbnailCache
-from video_preview import VideoPreview
+from contextlib import closing
+from video_preview import playlist, video_chunks
 
 DIST = Path(__file__).resolve().parents[1] / "dist"
 workers = BoundedSemaphore(3)
@@ -40,7 +41,6 @@ def preview(path, small):
 def create_server(library, connect, choose_folder=None):
     transfers = Transfers(library)
     thumbnails = ThumbnailCache()
-    videos = VideoPreview()
     token = secrets.token_urlsafe(24)
     config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
     language_file = config / "ios-photo-manager" / "language"
@@ -123,10 +123,30 @@ def create_server(library, connect, choose_folder=None):
                     query = parse_qs(urlsplit(self.path).query)
                     offset = max(0, int(query.get("offset", ["0"])[0]))
                     self.reply(library.scan(parts[2], offset, query.get("refresh") == ["1"]))
-                elif len(parts) == 4 and parts[:2] == ["api", "video-preview"]:
-                    source = library.resolve(*parts[2:])
-                    with videos.open(tuple(parts[2:]), source, self.connection) as stream:
-                        self.stream_file(stream, "video/mp4")
+                elif len(parts) == 5 and parts[:2] == ["api", "video-preview"]:
+                    source = library.resolve(*parts[2:4])
+                    if parts[4] == "index.m3u8":
+                        self.reply(playlist(source), "application/vnd.apple.mpegurl")
+                    else:
+                        segment = re.fullmatch(r"(\d{1,8})\.ts", parts[4])
+                        if not segment and parts[4] != "stream.mp4":
+                            return self.send_error(404)
+                        index = int(segment[1]) if segment else None
+                        with closing(video_chunks(source, self.connection, index)) as chunks:
+                            first = next(chunks, None)
+                            if not first:
+                                return self.send_error(503)
+                            self.send_response(200)
+                            self.send_header("Content-Type", "video/mp2t" if segment else "video/mp4")
+                            self.send_header("Cache-Control", "no-store")
+                            self.send_header("Connection", "close")
+                            self.end_headers()
+                            self.wfile.write(first)
+                            try:
+                                for block in chunks:
+                                    self.wfile.write(block)
+                            except OSError:
+                                self.close_connection = True
                 elif len(parts) == 4 and parts[0] == "api" and parts[1] in {"media", "thumb"}:
                     small = parts[1] == "thumb"
                     if small:

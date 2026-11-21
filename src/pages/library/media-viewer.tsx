@@ -5,17 +5,55 @@ import { mediaUrl, type Media } from "../../entities/media";
 import { t } from "../../shared/i18n";
 
 export function MediaViewer(props: { item: Media; device: string; photos: ViewerPhotos }) {
-  const [compatible, setCompatible] = createSignal(false);
+  let playback: "original" | "segments" | "stream" = "original";
+  let player: import("hls.js").default | undefined;
+  let disposed = false;
+  let videoElement: HTMLVideoElement | undefined;
   const [preparing, setPreparing] = createSignal(false);
-  function useCompatible(video: HTMLVideoElement) {
-    if (compatible()) {
+  const previewUrl = () => `api/video-preview/${props.device}/${props.item.id}`;
+
+  function stream(video: HTMLVideoElement) {
+    if (disposed || playback === "stream") return;
+    playback = "stream";
+    player?.destroy();
+    player = undefined;
+    video.src = previewUrl() + "/stream.mp4";
+  }
+
+  async function useCompatible(video: HTMLVideoElement) {
+    if (disposed) return;
+    if (playback === "stream") {
       setFailed(true);
       return;
     }
-    video.pause();
+    if (playback === "segments") {
+      stream(video);
+      return;
+    }
+    playback = "segments";
     setPreparing(true);
-    setCompatible(true);
+    try {
+      const { default: Hls } = await import("hls.js");
+      if (disposed || playback !== "segments") return;
+      if (Hls.isSupported()) {
+        player = new Hls({ maxBufferLength: 8, maxMaxBufferLength: 12 });
+        player.on(Hls.Events.ERROR, (_, data) => { if (data.fatal) stream(video); });
+        player.loadSource(previewUrl() + "/index.m3u8");
+        player.attachMedia(video);
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = previewUrl() + "/index.m3u8";
+      } else stream(video);
+    } catch { stream(video); }
   }
+
+  onCleanup(() => {
+    disposed = true;
+    player?.destroy();
+    if (videoElement) {
+      videoElement.removeAttribute("src");
+      videoElement.load();
+    }
+  });
   const [zoom, setZoom] = createSignal(1);
   const [failed, setFailed] = createSignal(false);
   const [dimensions, setDimensions] = createSignal({ width: 0, height: 0 });
@@ -140,18 +178,15 @@ export function MediaViewer(props: { item: Media; device: string; photos: Viewer
                   playsinline
                   preload="auto"
                   poster={mediaUrl(props.device, props.item, true)}
-                  src={
-                    compatible()
-                      ? `api/video-preview/${props.device}/${props.item.id}`
-                      : mediaUrl(props.device, props.item)
-                  }
+                  ref={videoElement}
+                  src={mediaUrl(props.device, props.item)}
+                  onLoadedData={() => setPreparing(false)}
                   onLoadedMetadata={(e) => {
                     const video = e.currentTarget;
                     if (!video.videoWidth) {
                       useCompatible(video);
                       return;
                     }
-                    setPreparing(false);
                   }}
                   onError={(e) => useCompatible(e.currentTarget)}
                 />

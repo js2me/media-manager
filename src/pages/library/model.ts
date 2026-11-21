@@ -63,6 +63,14 @@ export class LibraryModel extends ViewModelBase {
 
   private knownFormats = new Set<string>();
 
+  sampleFile(folders: readonly string[] | null) {
+    if (!this.state.total) return undefined;
+    for (const folder of folders ?? [""]) {
+      const item = this.buckets.get(folder)?.all[0];
+      if (item) return item;
+    }
+  }
+
   folderCount(folder: string) {
     return this.state.total ? this.buckets.get(folder)?.all.length ?? 0 : 0;
   }
