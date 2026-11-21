@@ -52,7 +52,7 @@ def publish(temp, final):
             raise OSError(code, os.strerror(code), str(final))
 
 
-def transfer_file(source, final, size, move, stop):
+def verified_copy(source, final, size, stop):
     if final.is_symlink():
         raise FileExistsError(str(final))
     with source.open("rb") as src:
@@ -67,8 +67,7 @@ def transfer_file(source, final, size, move, stop):
                 if digest(saved, stop) != expected:
                     raise FileExistsError(str(final))
                 checked = signature(os.fstat(saved.fileno()))
-                if move:
-                    os.fsync(saved.fileno())
+                os.fsync(saved.fileno())
             action = "matched"
         else:
             with tempfile.NamedTemporaryFile(dir=final.parent, prefix=".photo-import-", delete=False) as out:
@@ -91,12 +90,23 @@ def transfer_file(source, final, size, move, stop):
             action = "copied"
         if signature(source.stat()) != signature(original) or signature(final.stat()) != checked:
             raise OSError("File changed during transfer")
-        if move:
-            if stop.is_set():
-                raise InterruptedError()
-            fsync_directory(final.parent)
-            source.unlink()
-        return action
+        fsync_directory(final.parent)
+        return action, signature(original), checked
+
+
+def remove_verified(source, final, receipt, stop, check_devices):
+    _, original, checked = receipt
+    with source.open("rb") as src, final.open("rb") as saved:
+        if signature(os.fstat(src.fileno())) != original or signature(os.fstat(saved.fileno())) != checked:
+            raise OSError("File changed since verification")
+        if digest(src, stop) != digest(saved, stop):
+            raise OSError("Checksum mismatch before deletion")
+        check_devices()
+        if signature(source.lstat()) != original or signature(final.lstat()) != checked:
+            raise OSError("File changed before deletion")
+        if stop.is_set():
+            raise InterruptedError()
+        source.unlink()
 
 
 def fsync_directory(path):
@@ -138,6 +148,7 @@ class Transfers:
             if not device.root or not scan.done or scan.failed or not scan.items:
                 raise ValueError("scanRequired")
             root = device.root.resolve(strict=True)
+            source_identity = root.stat()
             entries = []
             for item in scan.items:
                 if selected_months is not None and item["eventMonth"] not in selected_months:
@@ -164,7 +175,7 @@ class Transfers:
                 self.stop = Event()
                 self.state = dict(status="running", total=len(entries), copied=0, matched=0,
                                   removed=0, file="", destination=str(dest), device=device.name, error="")
-                self.worker = Thread(target=self.run, args=(key, scan, root, fd, entries, move), daemon=False)
+                self.worker = Thread(target=self.run, args=(key, scan, root, source_identity, dest, fd, entries, move), daemon=False)
                 self.worker.start()
         except BaseException:
             os.close(fd)
@@ -177,19 +188,33 @@ class Transfers:
         if worker:
             worker.join()
 
-    def run(self, key, scan, root, fd, entries, move):
+    def run(self, key, scan, root, source_identity, dest, fd, entries, move):
         # Anchor writes to the selected filesystem even if its mount disappears.
         base = Path(f"/proc/self/fd/{fd}")
         counts = dict(copied=0, matched=0, removed=0)
         try:
-            source_disk = root.stat().st_dev
-            for rel, target, size in entries:
+            destination_identity = os.fstat(fd)
+            receipts = []
+            synced_parents = set()
+
+            def check_devices():
                 if self.stop.is_set():
                     raise InterruptedError()
+                with self.library.lock:
+                    if self.library.scans.get(key) is not scan:
+                        raise OSError("Source disconnected or rescanned")
+                if not os.path.samestat(source_identity, root.stat()) or not os.path.samestat(destination_identity, dest.stat()):
+                    raise OSError("Source or destination changed")
+
+            def check_source(source):
+                if source.resolve(strict=True) != source or source.stat().st_dev != source_identity.st_dev or not stat.S_ISREG(source.stat().st_mode):
+                    raise ValueError("sourceError")
+
+            for rel, target, size in entries:
+                check_devices()
                 self.update(file=str(rel))
                 source = root / rel
-                if source.resolve(strict=True) != source or source.stat().st_dev != source_disk or not stat.S_ISREG(source.stat().st_mode):
-                    raise ValueError("sourceError")
+                check_source(source)
                 folder = base
                 for part in target.parts[:-1]:
                     parent = folder
@@ -199,12 +224,28 @@ class Transfers:
                     if not folder.is_dir():
                         folder.mkdir()
                         fsync_directory(parent)
+                    elif move and parent not in synced_parents:
+                        # A retry may find a directory created just before a previous crash.
+                        fsync_directory(parent)
+                    synced_parents.add(parent)
                     if folder.stat().st_dev != os.fstat(fd).st_dev:
                         raise ValueError("destinationError")
-                action = transfer_file(source, folder / rel.name, size, move, self.stop)
-                counts[action] += 1
-                counts["removed"] += int(move)
+                receipt = verified_copy(source, folder / rel.name, size, self.stop)
+                if move:
+                    receipts.append((rel, target, receipt))
+                counts[receipt[0]] += 1
                 self.update(**counts)
+            check_devices()
+            if move:
+                self.update(phase="removing")
+                for rel, target, receipt in receipts:
+                    check_devices()
+                    self.update(file=str(rel))
+                    source = root / rel
+                    check_source(source)
+                    remove_verified(source, base / target, receipt, self.stop, check_devices)
+                    counts["removed"] += 1
+                    self.update(**counts)
             status = "done"
         except InterruptedError:
             status = "stopped"

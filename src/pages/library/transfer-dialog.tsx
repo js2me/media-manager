@@ -15,6 +15,7 @@ type Job = {
   status: "idle" | "running" | "failed" | "done" | "stopped";
   device: string; destination: string; file: string;
   copied: number; matched: number; removed: number; total: number;
+  phase?: "removing";
   error?: Message; detail?: string;
 };
 
@@ -229,9 +230,9 @@ export function TransferDialog(props: { model: LibraryModel }) {
         <Show when={state.busy}><p>{t("scanRequired")}</p></Show>
       </Show>
       <Show when={job()?.total ? job() : undefined}>{j => <section class="transfer-status" role="status">
-        <strong>{t(j().status === "done" ? "transferDone" : j().status === "stopped" ? "transferStopped" : j().status === "failed" ? (j().error || "transferError") : "transferBusy")}</strong>
+        <strong>{t(j().status === "done" ? "transferDone" : j().status === "stopped" ? "transferStopped" : j().status === "failed" ? (j().error || "transferError") : j().phase === "removing" ? "removingVerified" : "transferBusy")}</strong>
         <p>{j().device} → {j().destination}</p>
-        <progress value={j().copied + j().matched} max={j().total}/>
+        <progress value={j().phase === "removing" ? j().removed : j().copied + j().matched} max={j().total}/>
         <p>{j().copied + j().matched} / {j().total} · {t("copied")} {j().copied} · {t("matched")} {j().matched} · {t("removed")} {j().removed}</p>
         <small>{j().file}</small>
         <Show when={j().detail}><p>{j().detail}</p></Show>

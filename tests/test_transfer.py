@@ -6,7 +6,7 @@ from pathlib import Path
 from threading import Event
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "desktop"))
-from transfer import transfer_file
+from transfer import verified_copy, remove_verified
 
 
 class VerifiedTransferTest(unittest.TestCase):
@@ -22,7 +22,10 @@ class VerifiedTransferTest(unittest.TestCase):
         self.stop = Event()
 
     def transfer(self, move=False):
-        return transfer_file(self.source, self.target, len(self.content), move, self.stop)
+        receipt = verified_copy(self.source, self.target, len(self.content), self.stop)
+        if move:
+            remove_verified(self.source, self.target, receipt, self.stop, lambda: None)
+        return receipt[0]
 
     def test_copy_retry_and_verified_move(self):
         self.assertEqual(self.transfer(), "copied")
