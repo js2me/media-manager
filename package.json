@@ -1,0 +1,26 @@
+{
+  "name": "device-photo-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit && vite build",
+    "start": "npm run build && /usr/bin/python3 desktop/main.py"
+  },
+  "dependencies": {
+    "@kobalte/core": "^0.13.14",
+    "flatpickr": "^4.6.13",
+    "lucide-solid": "^1.77.0",
+    "mobx": "^6.16.1",
+    "mobx-solid": "^0.4.0",
+    "mobx-view-model": "^11.1.0",
+    "mobx-view-model-solid": "^0.1.0",
+    "mobx-web-api": "^1.19.2",
+    "solid-js": "^1.9.20"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-solid": "^2.11.17"
+  }
+}
