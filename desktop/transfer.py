@@ -122,10 +122,11 @@ class Transfers:
         with self.lock:
             self.state.update(values)
 
-    def start(self, key, path, disk, move, grouping="original", folders=None, language="en"):
+    def start(self, key, path, disk, move, grouping="original", folders=None, language="en", months=None):
         if language not in ("en", "ru"):
             raise ValueError("profileError")
-        settings = profile(grouping, folders, move)
+        settings = profile(grouping, folders, move, months)
+        selected_months = set(months) if months is not None else None
         selected = set(folders) if folders is not None else None
         dest = Path(path)
         if not dest.is_absolute() or not dest.is_dir():
@@ -139,6 +140,8 @@ class Transfers:
             root = device.root.resolve(strict=True)
             entries = []
             for item in scan.items:
+                if selected_months is not None and item["eventMonth"] not in selected_months:
+                    continue
                 if selected is None or item["folder"] in selected:
                     rel = scan.files[item["id"]].relative_to(root)
                     entries.append((rel, grouped_path(rel, item, grouping, language), item["size"]))

@@ -8,6 +8,7 @@ export interface Media {
   id: string;
   name: string;
   folder: string;
+  eventMonth: string;
   archiveFolder?: string;
   modified?: number | null;
   size?: number | null;

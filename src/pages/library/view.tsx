@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-solid";
 import { locale, t } from "../../shared/i18n";
+import { EventsNav, eventLabel } from "./events-nav";
 import { ViewerPhotos } from "./viewer-photos";
 import { MediaViewer } from "./media-viewer";
 import { Select } from "../../shared/ui/select";
@@ -92,7 +93,7 @@ export function LibraryPage() {
   const device = () => s.devices.find((d) => d.id === s.selected);
   const contexts = createMemo(() => folderContexts(s.folders, t("root")));
   const heading = () =>
-    s.folder ? folderName(s.folder, t("root")) : t(s.filter);
+    s.event ? eventLabel(s.event) : s.folder ? folderName(s.folder, t("root")) : t(s.filter);
   let settings!: HTMLDialogElement;
   const [help, setHelp] = createSignal(false);
   const previewIndex = createMemo(() =>
@@ -181,9 +182,9 @@ export function LibraryPage() {
           <For each={filters}>
             {(f) => (
               <button
-                aria-pressed={s.filter === f.id && !s.folder}
-                classList={{ active: s.filter === f.id && !s.folder }}
-                onClick={() => vm.patch({ filter: f.id, folder: "" })}
+                aria-pressed={s.filter === f.id && !s.folder && !s.event}
+                classList={{ active: s.filter === f.id && !s.folder && !s.event }}
+                onClick={() => vm.patch({ filter: f.id, folder: "", event: "" })}
               >
                 <f.icon size={18} />
                 {t(f.id)}
@@ -192,7 +193,9 @@ export function LibraryPage() {
           </For>
         </nav>
         <Show when={s.folders.length}>
-          <h3>{t("folders")}</h3>
+          <div class="browse-tree">
+          <EventsNav model={vm} />
+          <details><summary>{t("folders")}</summary>
           <nav class="folders" aria-label={t("folders")}>
             <For each={s.folders}>
               {(f) => (
@@ -200,7 +203,7 @@ export function LibraryPage() {
                   aria-pressed={s.folder === f}
                   classList={{ active: s.folder === f }}
                   title={f}
-                  onClick={() => vm.patch({ folder: f, filter: "all" })}
+                  onClick={() => vm.patch({ folder: f, event: "", filter: "all" })}
                 >
                   <Folder size={16} />
                   <span class="folder-label">
@@ -213,6 +216,8 @@ export function LibraryPage() {
               )}
             </For>
           </nav>
+          </details>
+          </div>
         </Show>
         <button class="help" onClick={() => settings.showModal()}>
           <Settings size={17} />
@@ -325,6 +330,7 @@ export function LibraryPage() {
                     selectionKey={JSON.stringify([
                       s.selected,
                       s.folder,
+                      s.event,
                       s.filter,
                       s.query,
                       s.extension,

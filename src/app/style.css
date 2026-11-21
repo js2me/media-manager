@@ -801,3 +801,21 @@ dialog.transfer-dialog { box-sizing: border-box; width: min(1020px, 96vw); max-w
   .transfer-columns { grid-template-columns: minmax(0, 1fr); }
   dialog.transfer-dialog { padding: 1rem; }
 }
+
+.browse-tree { min-height: 0; overflow: auto; margin: 14px 0; scrollbar-width: thin; }
+.browse-tree summary { cursor: pointer; }
+.browse-tree > details > summary { padding: 10px 12px; font-size: 12px; font-weight: 650; color: #d5cce3; }
+.event-tree { display: block; }
+.event-tree details > summary, .event-tree button { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; font-size: 13px; }
+.event-tree details > summary { list-style: none; }
+.event-tree details > summary::-webkit-details-marker { display: none; }
+.event-tree details[open] > summary svg { transform: rotate(90deg); }
+.event-tree details > summary:hover { background: #ffffff0b; }
+.event-tree details button { padding-left: 27px; }
+.event-tree small { margin-left: auto; color: var(--quiet); font-variant-numeric: tabular-nums; }
+@media (max-width: 600px) { .browse-tree { max-height: 35vh; } .event-tree button { width: 100%; } }
+.transfer-scope .select-trigger { max-width: 100%; width: 100%; justify-content: space-between; }
+.transfer-scope .select-trigger > span { display: none; }
+.transfer-folder-list details { margin-block: .3rem; }
+.transfer-folder-list summary { cursor: pointer; padding: .25rem 0; }
+.transfer-folder-list details label { margin-left: 1rem; }

@@ -6,6 +6,7 @@ from threading import Event, Lock, Thread, Timer
 from time import monotonic
 
 from gi.repository import Gio, GLib
+from transfer_profile import event_month
 
 PHOTOS = set("jpg jpeg jfif png heic heif avif webp gif bmp tif tiff dng".split())
 VIDEOS = set("mp4 mov m4v webm mkv avi mpg mpeg 3gp 3g2 mts m2ts".split())
@@ -118,6 +119,7 @@ class Library:
                                     }:
                                         archive_folder = Path(*relative.parts[1:])
                                     scan.items.append(dict(id=item, name=name, folder=str(relative), archiveFolder=str(archive_folder),
+                                        eventMonth=event_month(str(relative), stamp),
                                         modified=stamp if info.has_attribute("time::modified") else None,
                                         size=info.get_size() if info.has_attribute("standard::size") else None,
                                         kind="photo" if ext in PHOTOS else "video"))

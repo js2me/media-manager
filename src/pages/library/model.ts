@@ -4,6 +4,20 @@ import { pageVisibility } from "mobx-web-api";
 import { request } from "../../shared/api/request";
 import type { Device, Media, LibraryResult } from "../../entities/media";
 
+
+
+type Bucket = { all: Media[]; photo: Media[]; video: Media[] };
+
+function addTo(buckets: Map<string, Bucket>, key: string, item: Media) {
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = { all: [], photo: [], video: [] };
+    buckets.set(key, bucket);
+  }
+  bucket.all.push(item);
+  bucket[item.kind].push(item);
+}
+
 export const sortOrders = [
   "deviceOrder",
   "nameAsc",
@@ -35,6 +49,8 @@ export class LibraryModel extends ViewModelBase {
       total: 0,
       folders: [] as string[],
       folder: "",
+      event: "",
+      months: [] as string[],
       filter: "all" as "all" | Media["kind"],
       preview: null as Media | null,
       scanFolder: "",
@@ -46,6 +62,7 @@ export class LibraryModel extends ViewModelBase {
       devices: observable.ref,
       formats: observable.ref,
       folders: observable.ref,
+      months: observable.ref,
       preview: observable.ref,
     },
   );
@@ -55,18 +72,19 @@ export class LibraryModel extends ViewModelBase {
   private disposeVisibility?: () => void;
   private pendingDiscovery = false;
 
-  // Append once per batch. Reading a viewport or changing filters is O(visible cards).
-  private buckets = new Map<
-    string,
-    { all: Media[]; photo: Media[]; video: Media[] }
-  >();
+  private buckets = new Map<string, Bucket>();
+  private events = new Map<string, Bucket>();
+
+  eventCount(key: string) {
+    return this.state.total ? this.events.get(key)?.all.length ?? 0 : 0;
+  }
 
   private knownFormats = new Set<string>();
 
-  sampleFile(folders: readonly string[] | null) {
+  sampleFile(folders: readonly string[] | null, months: readonly string[] | null = null) {
     if (!this.state.total) return undefined;
-    for (const folder of folders ?? [""]) {
-      const item = this.buckets.get(folder)?.all[0];
+    for (const key of months ?? folders ?? [""]) {
+      const item = (months ? this.events : this.buckets).get(key)?.all[0];
       if (item) return item;
     }
   }
@@ -77,7 +95,8 @@ export class LibraryModel extends ViewModelBase {
 
   private get scopedItems(): readonly Media[] {
     if (!this.state.total) return [];
-    return this.buckets.get(this.state.folder)?.[this.state.filter] ?? [];
+    const bucket = this.state.event ? this.events.get(this.state.event) : this.buckets.get(this.state.folder);
+    return bucket?.[this.state.filter] ?? [];
   }
 
   private results = computed(() => {
@@ -127,20 +146,19 @@ export class LibraryModel extends ViewModelBase {
 
   private append(items: Media[]) {
     const newFolders: string[] = [];
+    const newMonths: string[] = [];
     for (const item of items) {
       this.knownFormats.add(extension(item));
-      for (const key of ["", item.folder]) {
-        let bucket = this.buckets.get(key);
-        if (!bucket) {
-          bucket = { all: [], photo: [], video: [] };
-          this.buckets.set(key, bucket);
-          if (key) newFolders.push(key);
-        }
-        bucket.all.push(item);
-        bucket[item.kind].push(item);
-      }
+      if (!this.buckets.has(item.folder)) newFolders.push(item.folder);
+      addTo(this.buckets, "", item);
+      addTo(this.buckets, item.folder, item);
+      const month = item.eventMonth;
+      if (!this.events.has(month)) newMonths.push(month);
+      addTo(this.events, month, item);
+      if (month !== "unknown") addTo(this.events, month.split("-")[0], item);
     }
     runInAction(() => {
+      if (newMonths.length) this.state.months = this.state.months.concat(newMonths).sort().reverse();
       if (this.state.formats.length !== this.knownFormats.size)
         this.state.formats = [...this.knownFormats].sort();
       if (newFolders.length)
@@ -201,9 +219,12 @@ export class LibraryModel extends ViewModelBase {
   async select(id: string, refresh = false) {
     const generation = ++this.generation;
     this.buckets.clear();
+    this.events.clear();
     this.knownFormats.clear();
     this.patch({
       formats: [],
+      months: [],
+      event: "",
       extension: refresh ? this.state.extension : "",
       selected: id,
       scanFolder: "",

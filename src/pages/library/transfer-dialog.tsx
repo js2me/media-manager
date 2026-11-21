@@ -1,13 +1,16 @@
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { FolderOpen, HardDriveDownload, X } from "lucide-solid";
 import { request } from "../../shared/api/request";
 import { locale, t } from "../../shared/i18n";
 import type { Message } from "../../shared/i18n/messages";
 import type { LibraryModel } from "./model";
 
+import { Select } from "../../shared/ui/select";
+import { eventLabel } from "./events-nav";
+
 type Destination = { path: string; disk: string };
-type Grouping = "original" | "month" | "type";
-type Profile = { grouping: Grouping; folders: string[] | null; move: boolean };
+type Grouping = "original" | "month" | "type" | "events";
+type Profile = { grouping: Grouping; months?: string[] | null; folders: string[] | null; move: boolean };
 type Job = {
   status: "idle" | "running" | "failed" | "done" | "stopped";
   device: string; destination: string; file: string;
@@ -22,6 +25,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
   const [path, setPath] = createSignal("");
   const [grouping, setGrouping] = createSignal<Grouping>("original");
   const [folders, setFolders] = createSignal<string[] | null>(null);
+  const [months, setMonths] = createSignal<string[] | null>(null);
   const [search, setSearch] = createSignal("");
   const [profileReady, setProfileReady] = createSignal(false);
   const [restored, setRestored] = createSignal(false);
@@ -36,14 +40,15 @@ export function TransferDialog(props: { model: LibraryModel }) {
   const device = () => state.devices.find(d => d.id === state.selected);
   function clearTimer() { window.clearTimeout(timer); }
   onCleanup(clearTimer);
-  const count = () => folders()?.reduce((n, f) => n + props.model.folderCount(f), 0) ?? state.total;
+  const count = () => months()?.reduce((n, m) => n + props.model.eventCount(m), 0) ?? folders()?.reduce((n, f) => n + props.model.folderCount(f), 0) ?? state.total;
   const example = createMemo(() => {
-    const item = props.model.sampleFile(folders());
+    const item = props.model.sampleFile(folders(), months());
     if (!item || !path()) return;
     const source = item.folder === "." ? item.name : item.folder + "/" + item.name;
     const archiveFolder = item.archiveFolder ?? item.folder;
     const archivePath = archiveFolder === "." ? item.name : archiveFolder + "/" + item.name;
     let prefix = "";
+    if (grouping() === "events") prefix = item.eventMonth === "unknown" ? "Unknown-date/" : item.eventMonth.replace("-", "/") + "/";
     if (grouping() === "type") prefix = item.kind === "video" ? "Videos/" : "Photos/";
     if (grouping() === "month") {
       const date = item.modified == null ? null : new Date(item.modified * 1000);
@@ -51,6 +56,15 @@ export function TransferDialog(props: { model: LibraryModel }) {
     }
     return { source, archivePath, destination: path().replace(/\/+$/, "") + "/", prefix };
   });
+  function periodCheckbox(keys: () => string[], label: string) {
+    const selected = () => keys().filter(key => months()?.includes(key)).length;
+    return <label><input type="checkbox" checked={selected() === keys().length}
+      ref={input => createEffect(() => { input.indeterminate = selected() > 0 && selected() < keys().length; })}
+      onChange={e => setMonths(previous => e.currentTarget.checked
+        ? [...new Set([...(previous ?? []), ...keys()])]
+        : (previous ?? []).filter(key => !keys().includes(key)))} />
+      {label}<small>{keys().reduce((n, m) => n + props.model.eventCount(m), 0)}</small></label>;
+  }
   function destinationChanged(value: string, delay = 0) {
     const version = ++lookup;
     window.clearTimeout(profileTimer);
@@ -60,6 +74,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
     setError(undefined);
     setSearch("");
     setFolders(null);
+    setMonths(null);
     setGrouping("original");
     setMove(false);
     if (!value) return;
@@ -75,6 +90,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
         if (profile) {
           setGrouping(profile.grouping);
           setFolders(profile.folders);
+          setMonths(profile.months ?? null);
           setMove(profile.move);
           setRestored(true);
         }
@@ -133,7 +149,7 @@ export function TransferDialog(props: { model: LibraryModel }) {
         .sort((a, b) => b.path.length - a.path.length)[0];
       const response = await fetch("api/transfer", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ device: state.selected, path: target, disk: mount?.disk, move: move(), folders: folders(), grouping: grouping(), language: locale.language }),
+        body: JSON.stringify({ device: state.selected, path: target, disk: mount?.disk, move: move(), folders: folders(), months: months(), grouping: grouping(), language: locale.language }),
       });
       if (!response.ok) throw new Error();
       const result: Job & { rejected?: Message } = await response.json();
@@ -164,7 +180,11 @@ export function TransferDialog(props: { model: LibraryModel }) {
         <Show when={restored()}><small>{t("restoredProfile")}</small></Show>
         <div class="transfer-columns">
         <fieldset class="transfer-scope" disabled={!profileReady() || pending()}>
-          <legend>{t("sourceFolders")}</legend>
+          <legend>{t("sourceSelection")}</legend>
+          <Select label={t("sourceSelection")} options={["folders", "events"] as const}
+            value={months() === null ? "folders" : "events"} text={t}
+            onChange={mode => { setFolders(null); setMonths(mode === "events" ? [] : null); }} />
+          <Show when={months() === null}>
           <label><input type="checkbox" checked={folders() === null} onChange={e => setFolders(e.currentTarget.checked ? null : [])} /> {t("allFolders")}</label>
           <Show when={folders() !== null}>
             <input type="search" aria-label={t("findFolder")} placeholder={t("findFolder")} value={search()} onInput={e => setSearch(e.currentTarget.value)} />
@@ -175,14 +195,25 @@ export function TransferDialog(props: { model: LibraryModel }) {
               }</For>
             </div>
           </Show>
+          </Show>
+          <Show when={months() !== null}>
+            <div class="transfer-folder-list">
+              <For each={[...new Set(state.months.filter(m => m !== "unknown").map(m => m.slice(0, 4)))]}>{year => {
+                const children = () => state.months.filter(m => m.startsWith(year + "-"));
+                return <details><summary>{year} · {props.model.eventCount(year)}</summary>
+                  {periodCheckbox(children, t("wholeYear"))}
+                  <For each={children()}>{m => periodCheckbox(() => [m], eventLabel(m, true))}</For>
+                </details>;
+              }}</For>
+              <Show when={state.months.includes("unknown")}>{periodCheckbox(() => ["unknown"], t("undated"))}</Show>
+            </div>
+          </Show>
         </fieldset>
         <fieldset class="transfer-scope transfer-layout" disabled={!profileReady() || pending()}>
-          <legend><label for="transfer-grouping">{t("groupBy")}</label></legend>
-          <select id="transfer-grouping" value={grouping()} onChange={e => setGrouping(e.currentTarget.value as Grouping)}>
-            <option value="original">{t("originalFolders")}</option>
-            <option value="month">{t("monthFolders")}</option>
-            <option value="type">{t("typeFolders")}</option>
-          </select>
+          <legend>{t("groupBy")}</legend>
+          <Select label={t("groupBy")} options={["original", "events", "month", "type"] as const}
+            value={grouping()} onChange={setGrouping}
+            text={key => t(({ original: "originalFolders", events: "eventLayout", month: "monthFolders", type: "typeFolders" } as const)[key])} />
           <Show when={example()} fallback={<p>{t("selectFolders")}</p>}>{file =>
             <dl class="transfer-example">
               <dt>{t("sampleSource")}</dt>

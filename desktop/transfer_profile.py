@@ -1,6 +1,7 @@
 """Portable settings stored alongside an imported library."""
 import json
 import os
+import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -9,8 +10,20 @@ FILENAME = ".photo-library-transfer.json"
 LIMIT = 4 * 1024 * 1024
 
 
-def profile(grouping="original", folders=None, move=False):
-    if grouping not in ("original", "month", "type") or type(move) is not bool:
+def event_month(folder, stamp):
+    album = re.fullmatch(r"((?:19|20)\d{2})(0[1-9]|1[0-2])_[a-z]+", Path(folder).name, re.I)
+    if album:
+        return "-".join(album.groups())
+    if stamp and stamp > 0:
+        try:
+            return datetime.fromtimestamp(stamp).strftime("%Y-%m")
+        except (OSError, OverflowError, ValueError):
+            pass
+    return "unknown"
+
+
+def profile(grouping="original", folders=None, move=False, months=None):
+    if grouping not in ("original", "month", "type", "events") or type(move) is not bool:
         raise ValueError("profileError")
     if folders is not None:
         if not isinstance(folders, list) or not folders:
@@ -19,7 +32,13 @@ def profile(grouping="original", folders=None, move=False):
             if not isinstance(folder, str) or not folder or Path(folder).is_absolute() or ".." in Path(folder).parts:
                 raise ValueError("profileError")
         folders = sorted(set(folders))
-    return dict(version=1, grouping=grouping, folders=folders, move=move)
+    if months is not None:
+        if folders is not None or not isinstance(months, list) or not months:
+            raise ValueError("selectFolders")
+        if any(not isinstance(m, str) or not re.fullmatch(r"(?:[0-9]{4}-(?:0[1-9]|1[0-2])|unknown)", m) for m in months):
+            raise ValueError("profileError")
+        months = sorted(set(months))
+    return dict(version=2 if months is not None or grouping == "events" else 1, months=months, grouping=grouping, folders=folders, move=move)
 
 
 def read_profile(directory):
@@ -35,9 +54,9 @@ def read_profile(directory):
     if len(raw) > LIMIT:
         raise ValueError("profileError")
     data = json.loads(raw)
-    if not isinstance(data, dict) or data.get("version") != 1:
+    if not isinstance(data, dict) or data.get("version") not in (1, 2):
         raise ValueError("profileError")
-    return profile(data["grouping"], data["folders"], data["move"])
+    return profile(data["grouping"], data["folders"], data["move"], data["months"] if data["version"] == 2 else None)
 
 
 def save_profile(directory, settings):
@@ -64,6 +83,9 @@ MONTH_NAMES = {
 
 def grouped_path(relative, item, grouping, language="en"):
     relative = Path(item.get("archiveFolder", relative.parent)) / relative.name
+    if grouping == "events":
+        month = item["eventMonth"]
+        return Path("Unknown-date" if month == "unknown" else month.replace("-", "/")) / relative
     if grouping == "month":
         stamp = item["modified"]
         prefix = "Unknown-date"
